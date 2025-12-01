@@ -18,6 +18,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 from components.header import render_header
 from components.order_table import render_order_table
 from data.mock_data import get_predictions_df
+from data.supabase_client import (
+    get_predictions_from_supabase,
+    transform_supabase_to_display_df
+)
+import config
 
 # 페이지 설정
 st.set_page_config(
@@ -97,11 +102,29 @@ def main():
     filters = render_header()
 
     # 예측 데이터 로드
-    df = get_predictions_df(
-        base_date=filters['base_date'],
-        order_date=filters['order_date'],
-        store_id=filters['store']
-    )
+    df = None
+
+    if config.USE_SUPABASE:
+        try:
+            # Supabase에서 조회
+            supabase_df = get_predictions_from_supabase(
+                store_cd=filters['store'],
+                prediction_date=filters['base_date'].strftime('%Y-%m-%d')
+            )
+
+            if supabase_df is not None and not supabase_df.empty:
+                df = transform_supabase_to_display_df(supabase_df, filters['horizon'])
+
+        except Exception as e:
+            st.warning(f"Supabase 연결 실패: {e}")
+
+    # Supabase 실패 또는 데이터 없음 → Mock 데이터 사용
+    if df is None or df.empty:
+        df = get_predictions_df(
+            base_date=filters['base_date'],
+            order_date=filters['order_date'],
+            store_id=filters['store']
+        )
 
     # 테이블 렌더링
     updated_df = render_order_table(df, filters['horizon'])

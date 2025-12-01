@@ -4,6 +4,9 @@ Dashboard Configuration
 발주의뢰 대시보드 설정
 """
 
+# Supabase 사용 여부 (False면 mock_data 사용)
+USE_SUPABASE = True
+
 # 점포 정보
 STORES = {
     '210': '210-본점',

@@ -8,10 +8,18 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import sys
+import uuid
 from pathlib import Path
 
 # 상위 디렉토리 import
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from components.chatbot import get_chatbot
+from data.supabase_client import (
+    get_latest_context_for_sku,
+    save_chat_history
+)
+import config
 
 
 def render_order_table(df: pd.DataFrame, horizon: int) -> pd.DataFrame:
@@ -142,7 +150,7 @@ def render_order_table(df: pd.DataFrame, horizon: int) -> pd.DataFrame:
 
         # 챗봇 확장 영역
         if sku_code in st.session_state.chat_rows:
-            render_chat_interface(sku_code, row['단품명'])
+            render_chat_interface(sku_code, row['단품명'], horizon)
 
         st.markdown("---")
 
@@ -152,7 +160,7 @@ def render_order_table(df: pd.DataFrame, horizon: int) -> pd.DataFrame:
     return updated_df
 
 
-def render_chat_interface(sku_code: str, sku_name: str):
+def render_chat_interface(sku_code: str, sku_name: str, horizon: int = 1):
     """
     SKU별 챗봇 인터페이스 렌더링
 
@@ -162,7 +170,40 @@ def render_chat_interface(sku_code: str, sku_name: str):
         단품코드
     sku_name : str
         단품명
+    horizon : int
+        예측 horizon (1~4)
     """
+    # 세션 ID 초기화
+    if 'session_id' not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())[:8]
+
+    # Context 조회 (Supabase)
+    context = None
+    if config.USE_SUPABASE:
+        try:
+            context = get_latest_context_for_sku(
+                store_cd='210',
+                sku_code=sku_code,
+                horizon=f't+{horizon}'
+            )
+        except Exception as e:
+            pass
+
+    # Context가 없으면 기본값
+    if not context:
+        context = {
+            'sku_code': sku_code,
+            'sku_name': sku_name,
+            'horizon': f't+{horizon}',
+            'predicted_value': 'N/A',
+            'pred_min': 'N/A',
+            'pred_max': 'N/A',
+            'model_name': 'Unknown'
+        }
+
+    # 챗봇 인스턴스
+    chatbot = get_chatbot()
+
     with st.container():
         st.markdown(f"""
         <div style="background-color: #e8f4ea; padding: 15px; border-radius: 10px; margin: 10px 0;">
@@ -170,6 +211,7 @@ def render_chat_interface(sku_code: str, sku_name: str):
 
         st.markdown(f"#### 💬 {sku_name} AI 어시스턴트")
         st.caption("수요 예측에 대해 질문하거나, 발주량 조정 시나리오를 물어보세요.")
+        st.caption("💡 대화는 서비스 개선을 위해 저장될 수 있습니다.")
 
         # 채팅 기록 표시
         chat_container = st.container()
@@ -204,12 +246,34 @@ def render_chat_interface(sku_code: str, sku_name: str):
                 'content': user_input
             })
 
-            # AI 응답 (더미)
-            ai_response = generate_dummy_response(sku_code, user_input)
+            # AI 응답 (실제 챗봇 또는 폴백)
+            chat_history = st.session_state.chat_messages.get(sku_code, [])
+            ai_response = chatbot.get_response(
+                user_message=user_input,
+                context=context,
+                chat_history=chat_history[:-1]  # 현재 메시지 제외
+            )
+
             st.session_state.chat_messages[sku_code].append({
                 'role': 'assistant',
                 'content': ai_response
             })
+
+            # Supabase에 대화 저장
+            if config.USE_SUPABASE:
+                try:
+                    prediction_date = context.get('prediction_date', datetime.now().strftime('%Y-%m-%d'))
+                    save_chat_history(
+                        store_cd='210',
+                        sku_code=sku_code,
+                        prediction_date=prediction_date,
+                        horizon=f't+{horizon}',
+                        user_message=user_input,
+                        assistant_message=ai_response,
+                        session_id=st.session_state.session_id
+                    )
+                except Exception as e:
+                    pass
 
             # 리렌더링
             st.rerun()
@@ -218,11 +282,7 @@ def render_chat_interface(sku_code: str, sku_name: str):
         st.markdown("**빠른 질문:**")
         example_cols = st.columns(3)
 
-        examples = [
-            "예측 근거가 뭐야?",
-            "공격적 발주 시 리스크는?",
-            "작년 대비 트렌드는?"
-        ]
+        examples = chatbot.get_quick_suggestions()
 
         for i, (col, example) in enumerate(zip(example_cols, examples)):
             if col.button(example, key=f"example_{sku_code}_{i}"):
@@ -234,11 +294,33 @@ def render_chat_interface(sku_code: str, sku_name: str):
                     'content': example
                 })
 
-                ai_response = generate_dummy_response(sku_code, example)
+                chat_history = st.session_state.chat_messages.get(sku_code, [])
+                ai_response = chatbot.get_response(
+                    user_message=example,
+                    context=context,
+                    chat_history=chat_history[:-1]
+                )
+
                 st.session_state.chat_messages[sku_code].append({
                     'role': 'assistant',
                     'content': ai_response
                 })
+
+                # Supabase에 대화 저장
+                if config.USE_SUPABASE:
+                    try:
+                        prediction_date = context.get('prediction_date', datetime.now().strftime('%Y-%m-%d'))
+                        save_chat_history(
+                            store_cd='210',
+                            sku_code=sku_code,
+                            prediction_date=prediction_date,
+                            horizon=f't+{horizon}',
+                            user_message=example,
+                            assistant_message=ai_response,
+                            session_id=st.session_state.session_id
+                        )
+                    except Exception as e:
+                        pass
 
                 st.rerun()
 
