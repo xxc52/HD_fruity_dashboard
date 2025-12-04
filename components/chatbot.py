@@ -164,6 +164,23 @@ class PredictionChatbot:
 - 전주 대비: {trend.get('vs_prev_week', 'N/A')}
 """
 
+        # Feature 정보 (horizon별 변수 목록)
+        if context.get('feature_info'):
+            fi = context['feature_info']
+            if isinstance(fi, dict):
+                horizon = context.get('horizon', 'N/A')
+                result += f"""
+[{horizon} 예측에 사용된 변수 정보]
+- 총 변수 수: {fi.get('total_count', 'N/A')}개
+- 공통 변수 (lag, rolling 등): {len(fi.get('common_features', []))}개
+  예: {', '.join(fi.get('common_features', [])[:5])}...
+- 날씨 변수: {fi.get('weather_features', [])}
+- 캘린더 변수: {fi.get('calendar_features', [])}
+- 휴일 변수: {fi.get('holiday_features', [])}
+- Lag 변수 (horizon별 다름): {fi.get('lag_features', [])}
+- 타겟 변수: {fi.get('target', 'N/A')}
+"""
+
         return result
 
     def translate_feature(self, feature_name: str) -> str:

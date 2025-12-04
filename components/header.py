@@ -91,14 +91,14 @@ def render_header() -> dict:
         )
 
     with col2:
-        # 기본값: 내일 (t+1)
-        default_order_date = datetime.now().date() + timedelta(days=1)
+        # base_date 기준 t+1 (자동 연동)
+        default_order_date = base_date + timedelta(days=1)
         order_date = st.date_input(
             "발주일",
             value=default_order_date,
-            min_value=base_date,
+            min_value=base_date + timedelta(days=1),
             max_value=base_date + timedelta(days=4),
-            help="발주 대상 날짜"
+            help="발주 대상 날짜 (t+1 ~ t+4)"
         )
 
     with col3:
