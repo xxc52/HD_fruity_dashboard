@@ -300,7 +300,7 @@ class PredictionChatbot:
             response = self.client.chat.completions.create(
                 model="gpt-5.1",
                 messages=messages,
-                max_completion_tokens=500
+                max_completion_tokens=1500
             )
 
             return response.choices[0].message.content
