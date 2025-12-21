@@ -35,17 +35,17 @@ def get_supabase_client() -> Optional['Client']:
 
 @st.cache_data(ttl=300)
 def get_predictions_from_supabase(
-    store_cd: str,
-    prediction_date: Optional[str] = None
+    date_t: str,
+    horizon: int
 ) -> Optional[pd.DataFrame]:
-    """predictions_display에서 예측 데이터 조회
+    """210_results 테이블에서 예측 데이터 조회
 
     Parameters
     ----------
-    store_cd : str
-        점포 코드
-    prediction_date : Optional[str]
-        예측 기준일 (없으면 최신 날짜)
+    date_t : str
+        기준일 (YYYY-MM-DD 형식)
+    horizon : int
+        예측 horizon (1~4)
 
     Returns
     -------
@@ -57,15 +57,11 @@ def get_predictions_from_supabase(
         return None
 
     try:
-        query = client.table("predictions_display").select("*").eq("store_cd", store_cd)
-
-        if prediction_date:
-            query = query.eq("prediction_date", prediction_date)
-        else:
-            # 최신 날짜 조회
-            query = query.order("prediction_date", desc=True)
-
-        response = query.execute()
+        response = client.table("210_results") \
+            .select("*") \
+            .eq("date_t", date_t) \
+            .eq("horizon", horizon) \
+            .execute()
 
         if response.data:
             df = pd.DataFrame(response.data)
@@ -272,64 +268,53 @@ def get_chat_history(
 
 
 def transform_supabase_to_display_df(
-    supabase_df: pd.DataFrame,
-    horizon: int
+    supabase_df: pd.DataFrame
 ) -> pd.DataFrame:
-    """Supabase 데이터를 대시보드 표시용 DataFrame으로 변환
+    """Supabase 210_results 데이터를 대시보드 표시용 DataFrame으로 변환
 
     Parameters
     ----------
     supabase_df : pd.DataFrame
-        Supabase에서 조회한 데이터
-    horizon : int
-        선택한 horizon (1~4)
+        Supabase에서 조회한 210_results 데이터
 
     Returns
     -------
     pd.DataFrame
         대시보드 표시용 DataFrame
     """
-    horizon_str = f"t+{horizon}"
+    import json
 
-    # horizon 필터링
-    filtered_df = supabase_df[supabase_df['horizon'] == horizon_str].copy()
-
-    if filtered_df.empty:
+    if supabase_df.empty:
         return pd.DataFrame()
 
     # 대시보드 포맷으로 변환
     rows = []
-    for idx, row in filtered_df.iterrows():
-        # top_features에서 Top 3 정렬하여 주요 영향 변수 생성
-        short_reason = "-"
-        if row.get('top_features'):
-            top_features = row['top_features']
-            if isinstance(top_features, dict) and top_features:
-                # 절댓값 기준 정렬하여 Top 3 추출
-                sorted_features = sorted(
-                    top_features.items(),
-                    key=lambda x: abs(x[1]),
-                    reverse=True
-                )[:3]
-                top_3_names = [feat for feat, _ in sorted_features]
-                short_reason = ", ".join(top_3_names)
+    for idx, row in supabase_df.iterrows():
+        # top_3_features 파싱
+        top_3_str = "-"
+        if row.get('top_3_features'):
+            try:
+                top_3 = row['top_3_features']
+                if isinstance(top_3, str):
+                    top_3 = json.loads(top_3)
+                if isinstance(top_3, list):
+                    top_3_str = ", ".join(top_3[:3])
+            except:
+                top_3_str = str(row['top_3_features'])
 
         rows.append({
             '순번': len(rows) + 1,
-            '단품코드': row['sku_code'],
-            '단품명': row.get('sku_name', row['sku_code']),
+            '단품코드': str(row['sku_code']),
+            '단품명': row.get('sku_name', str(row['sku_code'])),
             '단위': 'EA',
             '의뢰수량': 0,
-            '예측값': int(row['predicted_value']),
-            '예측값_min': int(row['pred_min']),
-            '예측값_max': int(row['pred_max']),
-            '예측모델': row.get('model_name', 'Unknown'),
-            '예측설명': short_reason,
-            '상세리포트': f"### {row.get('sku_name', row['sku_code'])} 상세 리포트\n\n"
-                         f"**예측 모델**: {row.get('model_name', 'Unknown')}\n\n"
-                         f"**예측값**: {int(row['predicted_value'])}개 "
-                         f"({int(row['pred_min'])} ~ {int(row['pred_max'])})",
-            '비고': ''
+            '예측값(p50)': int(row['p50']),
+            '하한값(p10)': int(row['p10']),
+            '상한값(p90)': int(row['p90']),
+            '주요 영향 변수': top_3_str,
+            '비고': '',
+            # 챗봇용 원본 데이터 (숨김)
+            '_row_data': row.to_dict()
         })
 
     return pd.DataFrame(rows)

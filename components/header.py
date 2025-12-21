@@ -84,10 +84,15 @@ def render_header() -> dict:
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
+        # 데모용: 2025-10-01 ~ 2025-10-15 선택 가능
+        min_date = datetime(2025, 10, 1).date()
+        max_date = datetime(2025, 10, 15).date()
         base_date = st.date_input(
             "오늘 날짜 (t)",
-            value=datetime.now().date(),
-            help="기준 날짜 (t 시점)"
+            value=min_date,
+            min_value=min_date,
+            max_value=max_date,
+            help="기준 날짜 (t 시점) - 2025-10-01 ~ 2025-10-15"
         )
 
     with col2:

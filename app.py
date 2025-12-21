@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from components.header import render_header
 from components.order_table import render_order_table
+from components.chatbot_cold_start import cold_start_dialog
 from data.mock_data import get_predictions_df
 from data.supabase_client import (
     get_predictions_from_supabase,
@@ -106,14 +107,17 @@ def main():
 
     if config.USE_SUPABASE:
         try:
-            # Supabase에서 조회
+            # Supabase에서 조회 (210_results 테이블)
+            date_t = filters['base_date'].strftime('%Y-%m-%d')
+            horizon = filters['horizon']
+
             supabase_df = get_predictions_from_supabase(
-                store_cd=filters['store'],
-                prediction_date=filters['base_date'].strftime('%Y-%m-%d')
+                date_t=date_t,
+                horizon=horizon
             )
 
             if supabase_df is not None and not supabase_df.empty:
-                df = transform_supabase_to_display_df(supabase_df, filters['horizon'])
+                df = transform_supabase_to_display_df(supabase_df)
 
         except Exception as e:
             st.warning(f"Supabase 연결 실패: {e}")
@@ -132,13 +136,17 @@ def main():
 
     # 저장 버튼 (하단)
     st.markdown("---")
-    col1, col2, col3 = st.columns([3, 1, 1])
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
 
     with col2:
+        if st.button("🆕 신규 SKU 예측", use_container_width=True):
+            cold_start_dialog()
+
+    with col3:
         if st.button("📥 임시저장", use_container_width=True):
             st.success("임시저장 완료!")
 
-    with col3:
+    with col4:
         if st.button("✅ 발주확정", type="primary", use_container_width=True):
             # 의뢰수량이 0인 항목 체크
             zero_items = updated_df[updated_df['의뢰수량'] == 0]

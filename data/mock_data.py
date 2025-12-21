@@ -240,7 +240,7 @@ def get_predictions_df(
     store_id: str = '210'
 ) -> pd.DataFrame:
     """
-    발주 예측 데이터프레임 생성
+    발주 예측 데이터프레임 생성 (Mock 데이터)
 
     Parameters
     ----------
@@ -254,7 +254,7 @@ def get_predictions_df(
     Returns
     -------
     pd.DataFrame
-        예측 데이터가 포함된 발주 목록
+        예측 데이터가 포함된 발주 목록 (새 컬럼 구조)
     """
     from config import TOP_10_SKUS, CONFIDENCE_INTERVAL
 
@@ -274,25 +274,46 @@ def get_predictions_df(
         base_qty = pred_info.get('base_qty', 100)
         # horizon이 길어질수록 불확실성 증가
         noise = np.random.normal(0, base_qty * 0.05 * horizon)
-        pred_qty = int(base_qty + noise)
+        p50 = int(base_qty + noise)
 
-        # 신뢰구간 ±5%
-        pred_min = int(pred_qty * (1 - CONFIDENCE_INTERVAL))
-        pred_max = int(pred_qty * (1 + CONFIDENCE_INTERVAL))
+        # p10, p90 계산
+        p10 = int(p50 * (1 - CONFIDENCE_INTERVAL * 2))
+        p90 = int(p50 * (1 + CONFIDENCE_INTERVAL * 2))
+
+        # Mock row_data for chatbot
+        mock_row_data = {
+            'sku_code': code,
+            'sku_name': sku['name'],
+            'p10': p10,
+            'p50': p50,
+            'p90': p90,
+            'model_name': pred_info.get('model', 'XGBoost'),
+            'val_rmse': round(np.random.uniform(20, 50), 2),
+            'val_train_rmse': round(np.random.uniform(15, 40), 2),
+            'n_train_samples': np.random.randint(300, 500),
+            'top_3_features': '["lag_1", "rolling_mean_6", "is_weekend_t+1"]',
+            'lag_1': np.random.randint(50, 200),
+            'rolling_mean_6': round(np.random.uniform(80, 180), 2),
+            'lag': '{"lag_1": 120, "lag_2": 115}',
+            'rolling': '{"rolling_mean_6": 125.5, "rolling_std_6": 15.2}',
+            'weather': '{"TEMP_AVG_t+1": 15.5, "HM_AVG_t+1": 55.0, "RN_DAY_t+1": 0.0}',
+            'holiday': '{"is_weekend_t+1": 0, "is_hd_holiday_t+1": 0}',
+            'shap_values': '{"lag_1": 0.25, "rolling_mean_6": 0.18, "is_weekend_t+1": 0.12}',
+            'hyperparameters': '{"n_estimators": 150, "max_depth": 6}'
+        }
 
         rows.append({
             '순번': i,
             '단품코드': code,
             '단품명': sku['name'],
             '단위': sku['unit'],
-            '의뢰수량': 0,  # 사용자 입력
-            '예측값': pred_qty,
-            '예측값_min': pred_min,
-            '예측값_max': pred_max,
-            '예측모델': pred_info.get('model', 'XGBoost'),
-            '예측설명': pred_info.get('short_reason', '-'),
-            '상세리포트': pred_info.get('full_report', '리포트 없음'),
-            '비고': ''
+            '의뢰수량': 0,
+            '예측값(p50)': p50,
+            '하한값(p10)': p10,
+            '상한값(p90)': p90,
+            '주요 영향 변수': pred_info.get('short_reason', 'lag_1, rolling_mean_6'),
+            '비고': '',
+            '_row_data': mock_row_data
         })
 
     return pd.DataFrame(rows)
