@@ -54,7 +54,7 @@ FEATURE_DESCRIPTIONS = {
     'RN_DAY': '일 강수량(mm)',
 
     # 휴일 피처
-    'is_weekend': '주말(금토일) 여부',
+    'is_weekend': '금토일 여부',
     'is_hd_holiday': '현대백화점 휴무일',
     'holiday_korea_t-1': '전일 한국 공휴일',
     'holiday_korea_t': '당일 한국 공휴일',
@@ -269,7 +269,7 @@ class PredictionChatbot:
             is_weekend = holiday.get(f'is_weekend_{suffix}', 0)
             is_hd = holiday.get(f'is_hd_holiday_{suffix}', 0)
             holiday_korea = holiday.get(f'holiday_korea_t_{suffix}', 0)
-            lines.append(f"  주말(금토일): {'예' if is_weekend else '아니오'}")
+            lines.append(f"  금토일 여부: {'예' if is_weekend else '아니오'}")
             lines.append(f"  현대백화점 휴무: {'예' if is_hd else '아니오'}")
             lines.append(f"  한국 공휴일: {'예' if holiday_korea else '아니오'}")
             lines.append("")
