@@ -348,9 +348,9 @@ class PredictionChatbot:
 (AI 연결 실패로 간략 리포트가 표시됩니다. 질문을 입력하시면 다시 시도합니다.)
 """
 
-    def get_response(self, user_message: str, context: Dict, chat_history: List[Dict]) -> str:
+    def get_response(self, user_message: str, context: Dict, chat_history: List[Dict], horizon: int = 1) -> str:
         """사용자 질문에 대한 응답 생성"""
-        context_str = self._format_row_data(context, context.get('sku_name', ''), 1)
+        context_str = self._format_row_data(context, context.get('sku_name', ''), horizon)
 
         if not self.client:
             return self._fallback_response(user_message, context)

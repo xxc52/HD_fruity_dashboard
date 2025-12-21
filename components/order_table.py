@@ -283,7 +283,8 @@ def render_chat_interface(sku_code: str, sku_name: str, row_data: dict, horizon:
             ai_response = chatbot.get_response(
                 user_message=user_input,
                 context=row_data,
-                chat_history=chat_history[:-1]  # 현재 메시지 제외
+                chat_history=chat_history[:-1],  # 현재 메시지 제외
+                horizon=horizon
             )
 
             st.session_state.chat_messages[sku_code].append({
@@ -329,7 +330,8 @@ def render_chat_interface(sku_code: str, sku_name: str, row_data: dict, horizon:
                 ai_response = chatbot.get_response(
                     user_message=example,
                     context=row_data,
-                    chat_history=chat_history[:-1]
+                    chat_history=chat_history[:-1],
+                    horizon=horizon
                 )
 
                 st.session_state.chat_messages[sku_code].append({
