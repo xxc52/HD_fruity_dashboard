@@ -209,7 +209,10 @@ def get_keywords_for_group(group_name: str) -> List[str]:
 # ========== Step 3: Supabase에서 유사 상품 검색 ==========
 
 def search_similar_products(keywords: List[str]) -> List[Dict]:
-    """after_preprocessing 테이블에서 키워드로 유사 상품 검색"""
+    """after_preprocessing 테이블에서 키워드로 유사 상품 검색
+
+    Note: 각 SKU당 30일치 데이터가 있어 중복이 많음 → limit 늘려서 검색 후 중복 제거
+    """
     client = get_supabase_client()
     if not client:
         return []
@@ -219,11 +222,11 @@ def search_similar_products(keywords: List[str]) -> List[Dict]:
 
     try:
         for keyword in keywords:
-            # sku_name에서 LIKE 검색
+            # sku_name에서 LIKE 검색 (limit 500으로 늘려서 더 많은 unique SKU 확보)
             response = client.table("after_preprocessing") \
                 .select("sku, sku_name") \
                 .ilike("sku_name", f"%{keyword}%") \
-                .limit(50) \
+                .limit(500) \
                 .execute()
 
             if response.data:
