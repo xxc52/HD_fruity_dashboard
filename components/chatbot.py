@@ -118,9 +118,11 @@ INITIAL_REPORT_PROMPT = """당신은 현대백화점 청과 수요 예측 시스
 
 **[모델 정보]**
 - 사용된 예측 모델과 검증 성능(RMSE)을 간단히 설명
+- "모델이 사용한 Feature 카테고리"에 있는 변수 유형들을 1줄로 요약 (예: 날씨, 휴일, 판매이력 등 사용됨)
 
 **[주요 영향 요인 Top 3 해석]**
 - top_3_features에 있는 3가지 요인을 한글로 번역하고, 각각이 예측에 어떤 영향을 미치는지 간단히 해석
+- (참고: SHAP 순위가 낮다고 해서 해당 변수가 사용되지 않은 것은 아님)
 
 **[최근 트렌드]**
 - lag_1(1일 전 판매량)과 rolling_mean_6(최근 6일 평균), rolling_mean_27(최근 27일 평균)을 활용해 최근 판매 트렌드 설명
@@ -144,6 +146,11 @@ SYSTEM_PROMPT = """당신은 현대백화점 청과 수요 예측 시스템의 A
 - 발주량 조정 시나리오 분석
 - 날씨, 휴일 등 외부 요인 영향 설명
 - 모델 신뢰도 및 예측 범위 해석
+
+**중요 구분**:
+- "모델이 사용한 Feature 카테고리"에 있으면 = 해당 변수가 모델의 입력으로 사용됨 (예: 날씨 변수 사용됨)
+- "SHAP 영향도"는 해당 예측에서 변수의 상대적 중요도를 나타냄 (순위가 낮다고 사용 안 된 게 아님)
+- 사용자가 "~를 고려했나?", "~가 변수로 사용되었나?" 질문 시 → Feature 카테고리 확인 후 답변
 
 답변 스타일:
 - 간결하고 명확하게 (3-5문장)
@@ -217,6 +224,28 @@ class PredictionChatbot:
         lines.append(f"검증 RMSE: {row_data.get('val_rmse', 'N/A')}")
         lines.append(f"학습 샘플 수: {row_data.get('n_train_samples', 'N/A')}")
         lines.append("")
+
+        # ========================================
+        # 모델이 사용한 Feature 카테고리 (중요!)
+        # ========================================
+        used_features = []
+        if row_data.get('lag'):
+            used_features.append("과거 판매량 (lag_1~lag_27)")
+        if row_data.get('rolling'):
+            used_features.append("이동통계 (rolling_mean, rolling_std, rolling_max)")
+        if row_data.get('weather'):
+            used_features.append("날씨 (기온, 습도, 풍속, 강수량)")
+        if row_data.get('holiday'):
+            used_features.append("휴일 (주말, 공휴일, 현대백화점휴무)")
+        if row_data.get('price_sales'):
+            used_features.append("가격/판매 (판매단가, 거래건수, 매입수량, 매익률)")
+
+        if used_features:
+            lines.append("** 모델이 사용한 Feature 카테고리 (입력 변수) **")
+            lines.append("(아래 변수들은 모두 모델 학습에 사용됨. SHAP 순위와 무관하게 모델 입력으로 활용됨)")
+            for feat in used_features:
+                lines.append(f"  ✓ {feat}")
+            lines.append("")
 
         # Top 3 Features
         top_3 = row_data.get('top_3_features')
