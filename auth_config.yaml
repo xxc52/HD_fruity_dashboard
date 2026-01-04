@@ -1,0 +1,40 @@
+credentials:
+  usernames:
+    admin:
+      name: "관리자"
+      password: "$2b$12$RTaAkyEhbuLyZoueWgAfKekE7oWKu2u21.or3BUYsqReOSPWSQA2K" # admin123
+      email: "admin@example.com"
+      role: "admin"
+      stores: ["210", "220", "480"]
+
+    210_fruit:
+      name: "본점 청과"
+      password: "$2b$12$qvGAe.wrQtRLpGt9.avpgOHszBSiPHyD5QwYW9AWVcRaLwsG8zQPG" # fruit210
+      email: "210@example.com"
+      role: "store"
+      stores: ["210"]
+
+    220_fruit:
+      name: "무역센터점 청과"
+      password: "$2b$12$mEpSQiwyusnqBegTsbhF/.ohzuN1kmX/IRZo1xcFtu.Ve08933Dl." # fruit220
+      email: "220@example.com"
+      role: "store"
+      stores: ["220"]
+
+    480_fruit:
+      name: "판교점 청과"
+      password: "$2b$12$kPKtx1vEF0vcInxRxchTNO9UFJdjpE9sDjEbNexknycbFMJoyxwBW" # fruit480
+      email: "480@example.com"
+      role: "store"
+      stores: ["480"]
+
+cookie:
+  expiry_days: 7
+  key: "fruity_dashboard_secret_key_2024"
+  name: "fruity_auth"
+#  | 사용자명  | 비밀번호 | 역할   | 접근 가능 점포  |
+#  |-----------|----------|--------|-----------------|
+#  | admin     | admin123 | 관리자 | 전체 + 모델관리 |
+#  | 210_fruit | fruit210 | 점포   | 210만           |
+#  | 220_fruit | fruit220 | 점포   | 220만           |
+#  | 480_fruit | fruit480 | 점포   | 480만           |

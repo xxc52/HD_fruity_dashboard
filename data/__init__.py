@@ -1,4 +1,4 @@
 """Dashboard Data Module"""
-from data.mock_data import get_predictions_df, get_sku_chat_context
+from data.local_loader import get_predictions_df, check_data_exists, get_available_dates
 
-__all__ = ['get_predictions_df', 'get_sku_chat_context']
+__all__ = ['get_predictions_df', 'check_data_exists', 'get_available_dates']

@@ -8,15 +8,21 @@ import streamlit as st
 from datetime import datetime, timedelta
 import sys
 from pathlib import Path
+from typing import List, Optional
 
 # 상위 디렉토리 import
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import STORES, DEPARTMENTS, PARTS, PC_CODES, CORNERS, ORDER_TYPES
 
 
-def render_header() -> dict:
+def render_header(allowed_stores: Optional[List[str]] = None) -> dict:
     """
     헤더 영역 렌더링
+
+    Parameters
+    ----------
+    allowed_stores : List[str], optional
+        접근 가능한 점포 코드 목록. None이면 모든 점포 허용.
 
     Returns
     -------
@@ -33,15 +39,24 @@ def render_header() -> dict:
     st.markdown("## 발주의뢰 등록 (신선식품/원테이블)")
     st.markdown("---")
 
+    # 점포 목록 필터링
+    if allowed_stores:
+        available_stores = {k: v for k, v in STORES.items() if k in allowed_stores}
+    else:
+        available_stores = STORES
+
     # 첫 번째 행: 점포, 팀, 파트, PC, 코너
     col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
+        # 점포가 1개만 허용된 경우 disabled
+        store_disabled = len(available_stores) == 1
         store = st.selectbox(
             "점",
-            options=list(STORES.keys()),
-            format_func=lambda x: STORES[x],
-            index=0
+            options=list(available_stores.keys()),
+            format_func=lambda x: available_stores[x],
+            index=0,
+            disabled=store_disabled
         )
 
     with col2:
@@ -84,15 +99,12 @@ def render_header() -> dict:
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        # 데모용: 2025-10-01 ~ 2025-10-15 선택 가능
-        min_date = datetime(2025, 10, 1).date()
-        max_date = datetime(2025, 10, 15).date()
+        # 오늘 날짜 기준
+        today = datetime.now().date()
         base_date = st.date_input(
             "오늘 날짜 (t)",
-            value=min_date,
-            min_value=min_date,
-            max_value=max_date,
-            help="기준 날짜 (t 시점) - 2025-10-01 ~ 2025-10-15"
+            value=today,
+            help="기준 날짜 (t 시점)"
         )
 
     with col2:

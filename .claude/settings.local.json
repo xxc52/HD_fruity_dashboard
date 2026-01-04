@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git -C \"c:/Users/xxc52/OneDrive/Desktop/capstone/fruity_vfinal/dashboard\" remote -v)"
+      "Bash(git -C \"c:/Users/xxc52/OneDrive/Desktop/capstone/fruity_vfinal/dashboard\" remote -v)",
+      "Bash(git -C:*)"
     ]
   }
 }

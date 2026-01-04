@@ -15,11 +15,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from components.chatbot import get_chatbot
-from data.supabase_client import save_chat_history
-import config
+import time
 
 
-def render_order_table(df: pd.DataFrame, horizon: int, prediction_date: str = None) -> pd.DataFrame:
+def stream_text(text: str, delay: float = 0.01):
+    """텍스트를 스트리밍으로 출력하기 위한 제너레이터"""
+    for char in text:
+        yield char
+        time.sleep(delay)
+
+
+
+
+def render_order_table(df: pd.DataFrame, horizon: int, prediction_date: str = None, store: str = None) -> pd.DataFrame:
     """
     발주의뢰 테이블 렌더링
 
@@ -31,12 +39,23 @@ def render_order_table(df: pd.DataFrame, horizon: int, prediction_date: str = No
         예측 horizon (1~4)
     prediction_date : str
         예측 기준일 (YYYY-MM-DD 형식)
+    store : str
+        점포 코드
 
     Returns
     -------
     pd.DataFrame
         수정된 발주 목록 (의뢰수량 포함)
     """
+    # 점포/날짜/horizon 변경 감지 → 채팅 state 초기화
+    current_context = f"{store}_{prediction_date}_{horizon}"
+    if st.session_state.get('chat_context') != current_context:
+        st.session_state.chat_context = current_context
+        st.session_state.chat_rows = set()
+        st.session_state.chat_messages = {}
+        st.session_state.initial_report_sent = set()
+        st.session_state.expanded_rows = set()
+
     st.markdown(f"### 발주의뢰 목록 ({len(df)}건) - t+{horizon} 예측")
 
     # 테이블 스타일 CSS
@@ -221,142 +240,78 @@ def render_chat_interface(sku_code: str, sku_name: str, row_data: dict, horizon:
     # 챗봇 인스턴스
     chatbot = get_chatbot()
 
-    with st.container():
-        st.markdown(f"""
-        <div style="background-color: #e8f4ea; padding: 15px; border-radius: 10px; margin: 10px 0;">
-        """, unsafe_allow_html=True)
-
-        st.markdown(f"#### AI {sku_name} 어시스턴트")
-        st.caption("수요 예측에 대해 질문하거나, 발주량 조정 시나리오를 물어보세요.")
+    with st.container(border=True):
+        st.caption(f"🤖 AI 어시스턴트 - {sku_name} ({sku_code})")
 
         # 초기 리포트 생성 (챗봇 처음 열 때만)
         report_key = f"{sku_code}_{horizon}"
         if report_key not in st.session_state.initial_report_sent:
             st.session_state.initial_report_sent.add(report_key)
 
-            # 초기 리포트 생성
-            initial_report = chatbot.generate_initial_report(row_data, sku_name, horizon)
-
             if sku_code not in st.session_state.chat_messages:
                 st.session_state.chat_messages[sku_code] = []
+
+            # 초기 리포트 생성 & 스트리밍 출력
+            with st.chat_message("assistant"):
+                initial_report = chatbot.generate_initial_report(row_data, sku_name, horizon)
+                # ~ 를 - 로 치환 (취소선 방지)
+                initial_report = initial_report.replace('~', '-')
+                st.write_stream(stream_text(initial_report))
 
             st.session_state.chat_messages[sku_code].append({
                 'role': 'assistant',
                 'content': initial_report
             })
-
-        # 채팅 기록 표시
-        chat_container = st.container()
-        with chat_container:
+        else:
+            # 이미 리포트 생성됨 - 기존 메시지 표시
             for msg in st.session_state.chat_messages.get(sku_code, []):
-                if msg['role'] == 'user':
-                    st.markdown(f"**나**: {msg['content']}")
-                else:
-                    st.markdown(f"**AI**: {msg['content']}")
+                content = msg['content'].replace('~', '-')
+                with st.chat_message(msg['role'] if msg['role'] == 'assistant' else 'user'):
+                    st.markdown(content)
 
-        # 입력 영역
-        col1, col2 = st.columns([5, 1])
+        # 대기 중인 질문이 있으면 스트리밍 응답 생성
+        pending_key = f"pending_question_{sku_code}"
+        if pending_key in st.session_state and st.session_state[pending_key]:
+            pending_question = st.session_state[pending_key]
+            st.session_state[pending_key] = None  # 처리 완료 표시
 
-        with col1:
-            user_input = st.text_input(
-                label=f"chat_input_{sku_code}",
-                label_visibility="collapsed",
-                placeholder="질문을 입력하세요...",
-                key=f"chat_input_{sku_code}"
-            )
+            # 사용자 질문 표시
+            with st.chat_message("user"):
+                st.markdown(pending_question)
 
-        with col2:
-            send_btn = st.button("전송", key=f"send_{sku_code}")
+            # AI 응답 스트리밍
+            with st.chat_message("assistant"):
+                chat_history = st.session_state.chat_messages.get(sku_code, [])
+                ai_response = chatbot.get_response(
+                    user_message=pending_question,
+                    context=row_data,
+                    chat_history=chat_history,
+                    horizon=horizon
+                )
+                ai_response = ai_response.replace('~', '-')
+                st.write_stream(stream_text(ai_response))
 
-        if send_btn and user_input:
-            # 사용자 메시지 추가
+            # 메시지 저장
             if sku_code not in st.session_state.chat_messages:
                 st.session_state.chat_messages[sku_code] = []
-
-            st.session_state.chat_messages[sku_code].append({
-                'role': 'user',
-                'content': user_input
-            })
-
-            # AI 응답
-            chat_history = st.session_state.chat_messages.get(sku_code, [])
-            ai_response = chatbot.get_response(
-                user_message=user_input,
-                context=row_data,
-                chat_history=chat_history[:-1],  # 현재 메시지 제외
-                horizon=horizon
-            )
-
-            st.session_state.chat_messages[sku_code].append({
-                'role': 'assistant',
-                'content': ai_response
-            })
-
-            # Supabase에 대화 저장
-            if config.USE_SUPABASE:
-                try:
-                    save_chat_history(
-                        store_cd='210',
-                        sku_code=sku_code,
-                        prediction_date=prediction_date or datetime.now().strftime('%Y-%m-%d'),
-                        horizon=f't+{horizon}',
-                        user_message=user_input,
-                        assistant_message=ai_response,
-                        session_id=st.session_state.session_id
-                    )
-                except Exception as e:
-                    pass
-
-            # 리렌더링
-            st.rerun()
+            st.session_state.chat_messages[sku_code].append({'role': 'user', 'content': pending_question})
+            st.session_state.chat_messages[sku_code].append({'role': 'assistant', 'content': ai_response})
 
         # 예시 질문 버튼
-        st.markdown("**빠른 질문:**")
+        st.caption("빠른 질문:")
         example_cols = st.columns(3)
-
         examples = chatbot.get_quick_suggestions()
 
         for i, (col, example) in enumerate(zip(example_cols, examples)):
             if col.button(example, key=f"example_{sku_code}_{i}"):
-                if sku_code not in st.session_state.chat_messages:
-                    st.session_state.chat_messages[sku_code] = []
-
-                st.session_state.chat_messages[sku_code].append({
-                    'role': 'user',
-                    'content': example
-                })
-
-                chat_history = st.session_state.chat_messages.get(sku_code, [])
-                ai_response = chatbot.get_response(
-                    user_message=example,
-                    context=row_data,
-                    chat_history=chat_history[:-1],
-                    horizon=horizon
-                )
-
-                st.session_state.chat_messages[sku_code].append({
-                    'role': 'assistant',
-                    'content': ai_response
-                })
-
-                # Supabase에 대화 저장
-                if config.USE_SUPABASE:
-                    try:
-                        save_chat_history(
-                            store_cd='210',
-                            sku_code=sku_code,
-                            prediction_date=prediction_date or datetime.now().strftime('%Y-%m-%d'),
-                            horizon=f't+{horizon}',
-                            user_message=example,
-                            assistant_message=ai_response,
-                            session_id=st.session_state.session_id
-                        )
-                    except Exception as e:
-                        pass
-
+                st.session_state[f"pending_question_{sku_code}"] = example
                 st.rerun()
 
-        st.markdown("</div>", unsafe_allow_html=True)
+        # 입력 영역
+        user_input = st.chat_input("질문을 입력하세요...", key=f"chat_input_{sku_code}")
+        if user_input:
+            st.session_state[f"pending_question_{sku_code}"] = user_input
+            st.rerun()
 
 
 def render_footer(df: pd.DataFrame):
