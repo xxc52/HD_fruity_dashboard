@@ -1,10 +1,10 @@
 """
 Admin Schedule Calendar Component
 ==================================
-ìŠ¤ì¼€ì¤„ ìº˜ë¦°ë”
-- ì›”ê°„ ìº˜ë¦°ë” UI (T=Tuning, F=Fitting, P=Predicting)
-- ë‚ ì§œë³„ ì˜ˆì•½ ê¸°ëŠ¥
-- Tuning/Fitting/Predicting ì¦‰ì‹œ ì‹¤í–‰
+스케줄 캘린더
+- 월간 캘린더 UI (T=Tuning, F=Fitting, P=Predicting)
+- 날짜별 예약 기능
+- Tuning/Fitting/Predicting 즉시 실행
 """
 
 import streamlit as st
@@ -21,7 +21,7 @@ SCHEDULED_TASKS_FILE = PROJECT_ROOT / "scheduled_tasks.json"
 
 
 def load_scheduled_tasks() -> List[Dict]:
-    """scheduled_tasks.json ë¡œë“œ"""
+    """scheduled_tasks.json 로드"""
     if not SCHEDULED_TASKS_FILE.exists():
         return []
 
@@ -34,20 +34,20 @@ def load_scheduled_tasks() -> List[Dict]:
 
 
 def save_scheduled_tasks(tasks: List[Dict]):
-    """scheduled_tasks.json ì €ìž¥"""
+    """scheduled_tasks.json 저장"""
     try:
         with open(SCHEDULED_TASKS_FILE, 'w', encoding='utf-8') as f:
             json.dump({'tasks': tasks}, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        st.error(f"ì €ìž¥ ì‹¤íŒ¨: {e}")
+        st.error(f"저장 실패: {e}")
 
 
 def get_scheduled_task(date_str: str, store: str, include_deleted: bool = False) -> Optional[Dict]:
-    """íŠ¹ì • ë‚ ì§œ/ì í¬ì˜ ì˜ˆì•½ ìž‘ì—… ì¡°íšŒ"""
+    """특정 날짜/점포의 예약 작업 조회"""
     tasks = load_scheduled_tasks()
     for task in tasks:
         if task.get('date') == date_str and task.get('store') == store:
-            # deletedëœ ìž‘ì—…ì€ ê¸°ë³¸ì ìœ¼ë¡œ ì œì™¸
+            # deleted된 작업은 기본적으로 제외
             if not include_deleted and task.get('deleted', False):
                 continue
             return task
@@ -55,17 +55,17 @@ def get_scheduled_task(date_str: str, store: str, include_deleted: bool = False)
 
 
 def add_scheduled_task(date_str: str, store: str, mode: str):
-    """ì˜ˆì•½ ìž‘ì—… ì¶”ê°€/ìˆ˜ì •/ì·¨ì†Œ"""
+    """예약 작업 추가/수정/취소"""
     tasks = load_scheduled_tasks()
 
-    # ê¸°ì¡´ ìž‘ì—… ì°¾ê¸°
+    # 기존 작업 찾기
     existing_idx = None
     for i, t in enumerate(tasks):
         if t.get('date') == date_str and t.get('store') == store:
             existing_idx = i
             break
 
-    if mode:  # ìƒˆ ì˜ˆì•½ ë˜ëŠ” ìˆ˜ì •
+    if mode:  # 새 예약 또는 수정
         new_task = {
             'date': date_str,
             'store': store,
@@ -78,7 +78,7 @@ def add_scheduled_task(date_str: str, store: str, mode: str):
             tasks[existing_idx] = new_task
         else:
             tasks.append(new_task)
-    else:  # ì·¨ì†Œ (deleted í”Œëž˜ê·¸ ì„¤ì •)
+    else:  # 취소 (deleted 플래그 설정)
         if existing_idx is not None:
             tasks[existing_idx]['deleted'] = True
             tasks[existing_idx]['deleted_at'] = datetime.now().isoformat()
@@ -87,17 +87,17 @@ def add_scheduled_task(date_str: str, store: str, mode: str):
 
 
 def get_default_mode(d: date) -> str:
-    """ë‚ ì§œ ê¸°ë°˜ ê¸°ë³¸ ëª¨ë“œ ê²°ì •"""
+    """날짜 기반 기본 모드 결정"""
     if d.day == 1:
         return 'tuning'
-    elif d.weekday() == 0:  # ì›”ìš”ì¼
+    elif d.weekday() == 0:  # 월요일
         return 'fitting'
     else:
         return 'predicting'
 
 
 def get_mode_for_date(date_str: str, store: str) -> str:
-    """íŠ¹ì • ë‚ ì§œì˜ ì‹¤í–‰ ëª¨ë“œ (ì˜ˆì•½ ìš°ì„ , ì—†ìœ¼ë©´ ê¸°ë³¸)"""
+    """특정 날짜의 실행 모드 (예약 우선, 없으면 기본)"""
     task = get_scheduled_task(date_str, store)
     if task:
         return task.get('mode', '')
@@ -107,7 +107,7 @@ def get_mode_for_date(date_str: str, store: str) -> str:
 
 
 def get_mode_display(mode: str) -> str:
-    """ëª¨ë“œ í‘œì‹œ ë¬¸ìž"""
+    """모드 표시 문자"""
     if mode == 'tuning':
         return 'T'
     elif mode == 'fitting':
@@ -118,18 +118,18 @@ def get_mode_display(mode: str) -> str:
 
 
 def get_mode_color(mode: str) -> str:
-    """ëª¨ë“œë³„ ìƒ‰ìƒ"""
+    """모드별 색상"""
     if mode == 'tuning':
-        return '#FF6347'  # ë¹¨ê°•
+        return '#FF6347'  # 빨강
     elif mode == 'fitting':
-        return '#4169E1'  # íŒŒëž‘
+        return '#4169E1'  # 파랑
     elif mode == 'predicting':
-        return '#32CD32'  # ì´ˆë¡
+        return '#32CD32'  # 초록
     return '#888'
 
 
 def run_pipeline_async(store: str, mode: str, date_str: str, skip_extract: bool = False, skip_preprocess: bool = False):
-    """íŒŒì´í”„ë¼ì¸ ë¹„ë™ê¸° ì‹¤í–‰ (Tuning/Fitting/Predicting)"""
+    """파이프라인 비동기 실행 (Tuning/Fitting/Predicting)"""
     python_exe = r"C:\ml_env\.venv\Scripts\python.exe"
     scheduler_path = PROJECT_ROOT / "scheduler.py"
 
@@ -147,34 +147,34 @@ def run_pipeline_async(store: str, mode: str, date_str: str, skip_extract: bool 
         cmd.append("--skip-preprocess")
 
     try:
-        # ë°±ê·¸ë¼ìš´ë“œ ì‹¤í–‰
+        # 백그라운드 실행
         subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
         )
-        skip_msg = " (ì¶”ì¶œ/ì „ì²˜ë¦¬ ìƒëžµ)" if (skip_extract or skip_preprocess) else ""
-        st.success(f"âœ… {mode.title()} íŒŒì´í”„ë¼ì¸ì´ ì‹œìž‘ë˜ì—ˆìŠµë‹ˆë‹¤.{skip_msg} (ì í¬: {store})")
-        st.info("ì§„í–‰ ìƒí™©ì€ 'íŒŒì´í”„ë¼ì¸ ìƒíƒœ'ì—ì„œ í™•ì¸í•  ìˆ˜ ìžˆìŠµë‹ˆë‹¤.")
+        skip_msg = " (추출/전처리 생략)" if (skip_extract or skip_preprocess) else ""
+        st.success(f"✅ {mode.title()} 파이프라인이 시작되었습니다.{skip_msg} (점포: {store})")
+        st.info("진행 상황은 '파이프라인 상태'에서 확인할 수 있습니다.")
     except Exception as e:
-        st.error(f"ì‹¤í–‰ ì‹¤íŒ¨: {e}")
+        st.error(f"실행 실패: {e}")
 
 
 def render_calendar_grid(store: str, year: int, month: int):
-    """ì›”ê°„ ìº˜ë¦°ë” ê·¸ë¦¬ë“œ ë Œë”ë§"""
-    cal = calendar.Calendar(firstweekday=6)  # ì¼ìš”ì¼ ì‹œìž‘
+    """월간 캘린더 그리드 렌더링"""
+    cal = calendar.Calendar(firstweekday=6)  # 일요일 시작
     month_days = cal.monthdayscalendar(year, month)
 
-    # ìš”ì¼ í—¤ë”
-    weekdays = ['ì¼', 'ì›”', 'í™”', 'ìˆ˜', 'ëª©', 'ê¸ˆ', 'í† ']
+    # 요일 헤더
+    weekdays = ['일', '월', '화', '수', '목', '금', '토']
     header_cols = st.columns(7)
     for i, wd in enumerate(weekdays):
         with header_cols[i]:
             color = '#FF6347' if i == 0 else ('#4169E1' if i == 6 else '#333')
             st.markdown(f"<div style='text-align:center;color:{color};font-weight:bold;'>{wd}</div>", unsafe_allow_html=True)
 
-    # ë‚ ì§œ ê·¸ë¦¬ë“œ
+    # 날짜 그리드
     today = date.today()
 
     for week in month_days:
@@ -190,12 +190,12 @@ def render_calendar_grid(store: str, year: int, month: int):
                     mode_display = get_mode_display(mode)
                     mode_color = get_mode_color(mode)
 
-                    # ì˜¤ëŠ˜ í‘œì‹œ
+                    # 오늘 표시
                     is_today = d == today
                     border = "2px solid #333" if is_today else "1px solid #ddd"
                     bg_color = "#fffacd" if is_today else "#fff"
 
-                    # ì˜ˆì•½ëœ ìž‘ì—… í‘œì‹œ
+                    # 예약된 작업 표시
                     task = get_scheduled_task(date_str, store)
                     is_scheduled = task is not None
 
@@ -219,34 +219,34 @@ def render_calendar_grid(store: str, year: int, month: int):
 
 
 def render_schedule_calendar(store: str, month: str):
-    """ìŠ¤ì¼€ì¤„ ìº˜ë¦°ë” ì»´í¬ë„ŒíŠ¸ ë Œë”ë§"""
-    st.markdown("### ðŸ“… ìŠ¤ì¼€ì¤„ ìº˜ë¦°ë”")
+    """스케줄 캘린더 컴포넌트 렌더링"""
+    st.markdown("### 📅 스케줄 캘린더")
 
-    # ë²”ë¡€
+    # 범례
     st.markdown("""
         <div style='display:flex;gap:20px;margin-bottom:10px;'>
-            <span><b style='color:#FF6347;'>T</b> = Tuning (ë§¤ì›” 1ì¼)</span>
-            <span><b style='color:#4169E1;'>F</b> = Fitting (ë§¤ì£¼ ì›”ìš”ì¼)</span>
-            <span><b style='color:#32CD32;'>P</b> = Predicting (ë§¤ì¼)</span>
-            <span>* = ì˜ˆì•½ë¨</span>
+            <span><b style='color:#FF6347;'>T</b> = Tuning (매월 1일)</span>
+            <span><b style='color:#4169E1;'>F</b> = Fitting (매주 월요일)</span>
+            <span><b style='color:#32CD32;'>P</b> = Predicting (매일)</span>
+            <span>* = 예약됨</span>
         </div>
     """, unsafe_allow_html=True)
 
-    # ì›” íŒŒì‹±
+    # 월 파싱
     year, mon = map(int, month.split('-'))
 
-    # ìº˜ë¦°ë” ê·¸ë¦¬ë“œ
-    st.markdown(f"#### {year}ë…„ {mon}ì›”")
+    # 캘린더 그리드
+    st.markdown(f"#### {year}년 {mon}월")
     render_calendar_grid(store, year, mon)
 
-    # ìž‘ì—… ì˜ˆì•½/ì‹¤í–‰ UI
-    st.markdown("#### ìž‘ì—… ê´€ë¦¬")
+    # 작업 예약/실행 UI
+    st.markdown("#### 작업 관리")
 
     col1, col2, col3 = st.columns([1, 1, 1])
 
     with col1:
         selected_date = st.date_input(
-            "ë‚ ì§œ ì„ íƒ",
+            "날짜 선택",
             value=date.today(),
             key="calendar_date_select"
         )
@@ -256,10 +256,10 @@ def render_schedule_calendar(store: str, month: str):
         current_mode = current_task.get('mode') if current_task else ''
 
         mode_options = ['', 'tuning', 'fitting', 'predicting']
-        mode_labels = ['ê¸°ë³¸ ìŠ¤ì¼€ì¤„', 'Tuning', 'Fitting', 'Predicting']
+        mode_labels = ['기본 스케줄', 'Tuning', 'Fitting', 'Predicting']
 
         selected_mode = st.selectbox(
-            "ì˜ˆì•½ ëª¨ë“œ",
+            "예약 모드",
             options=mode_options,
             format_func=lambda x: mode_labels[mode_options.index(x)],
             index=mode_options.index(current_mode) if current_mode in mode_options else 0,
@@ -268,61 +268,61 @@ def render_schedule_calendar(store: str, month: str):
 
     with col3:
         st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-        if st.button("ì˜ˆì•½ ì €ìž¥", key="save_schedule"):
+        if st.button("예약 저장", key="save_schedule"):
             add_scheduled_task(
                 selected_date.strftime('%Y-%m-%d'),
                 store,
                 selected_mode
             )
-            st.success("ì˜ˆì•½ì´ ì €ìž¥ë˜ì—ˆìŠµë‹ˆë‹¤.")
+            st.success("예약이 저장되었습니다.")
             st.rerun()
 
-    # ì¦‰ì‹œ ì‹¤í–‰ (ê¸ˆì¼)
-    st.markdown("#### ì¦‰ì‹œ ì‹¤í–‰ (ê¸ˆì¼)")
+    # 즉시 실행 (금일)
+    st.markdown("#### 즉시 실행 (금일)")
 
     today_str = date.today().strftime('%Y-%m-%d')
 
-    # ì²´í¬ë°•ìŠ¤: ì¶”ì¶œ/ì „ì²˜ë¦¬ í¬í•¨ ì—¬ë¶€ (ê¸°ë³¸ ì²´í¬ í•´ì œ = skip)
+    # 체크박스: 추출/전처리 포함 여부 (기본 체크 해제 = skip)
     check_col1, check_col2 = st.columns(2)
     with check_col1:
-        include_extract = st.checkbox("ì¶”ì¶œ í¬í•¨", value=False, key="include_extract")
+        include_extract = st.checkbox("추출 포함", value=False, key="include_extract")
     with check_col2:
-        include_preprocess = st.checkbox("ì „ì²˜ë¦¬ í¬í•¨", value=False, key="include_preprocess")
+        include_preprocess = st.checkbox("전처리 포함", value=False, key="include_preprocess")
 
     skip_extract = not include_extract
     skip_preprocess = not include_preprocess
 
-    # ì‹¤í–‰ ë²„íŠ¼
+    # 실행 버튼
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        if st.button("ðŸŽ¯ Tuning"):
+        if st.button("🎯 Tuning"):
             run_pipeline_async(store, 'tuning', today_str, skip_extract=skip_extract, skip_preprocess=skip_preprocess)
-        st.caption("ì•½ 3ì‹œê°„")
+        st.caption("약 3시간")
 
     with col2:
-        if st.button("ðŸ”„ Fitting"):
+        if st.button("🔄 Fitting"):
             run_pipeline_async(store, 'fitting', today_str, skip_extract=skip_extract, skip_preprocess=skip_preprocess)
-        st.caption("ì•½ 5ë¶„")
+        st.caption("약 5분")
 
     with col3:
-        if st.button("ðŸ“Š Predicting"):
+        if st.button("📊 Predicting"):
             run_pipeline_async(store, 'predicting', today_str, skip_extract=skip_extract, skip_preprocess=skip_preprocess)
-        st.caption("ì•½ 5ë¶„")
+        st.caption("약 5분")
 
-    # ì˜ˆì•½ëœ ìž‘ì—… ëª©ë¡
+    # 예약된 작업 목록
     tasks = load_scheduled_tasks()
     store_tasks = [t for t in tasks if t.get('store') == store and not t.get('deleted', False)]
 
     if store_tasks:
-        st.markdown("#### ì˜ˆì•½ëœ ìž‘ì—…")
+        st.markdown("#### 예약된 작업")
         for task in sorted(store_tasks, key=lambda x: x['date']):
             col1, col2, col3 = st.columns([2, 1, 1])
             with col1:
-                st.markdown(f"ðŸ“… {task['date']}")
+                st.markdown(f"📅 {task['date']}")
             with col2:
                 st.markdown(f"**{task['mode'].title()}**")
             with col3:
-                if st.button("âŒ", key=f"del_{task['date']}_{task['store']}"):
+                if st.button("❌", key=f"del_{task['date']}_{task['store']}"):
                     add_scheduled_task(task['date'], store, '')
                     st.rerun()

@@ -1,11 +1,11 @@
 """
 Admin Pipeline Status Component
 ================================
-íŒŒì´í”„ë¼ì¸ ìƒíƒœ í‘œì‹œ (í† ê¸€ í˜•íƒœ)
-- ì í¬ë³„ ë¶„ë¦¬
-- ë‹¨ê³„ë³„ ìƒíƒœ + ì†Œìš” ì‹œê°„: ì¶”ì¶œ, ì „ì²˜ë¦¬, íŠœë‹, í•™ìŠµ, ì˜ˆì¸¡
-- ê²½ê³ /ì—ëŸ¬ í‘œì‹œ
-- ê°™ì€ ë‚  ì—¬ëŸ¬ ì‹¤í–‰ ì§€ì› (ì¶”ê°€ ì‹¤í–‰ í‘œì‹œ)
+파이프라인 상태 표시 (토글 형태)
+- 점포별 분리
+- 단계별 상태 + 소요 시간: 추출, 전처리, 튜닝, 학습, 예측
+- 경고/에러 표시
+- 같은 날 여러 실행 지원 (추가 실행 표시)
 """
 
 import streamlit as st
@@ -17,12 +17,12 @@ from typing import Dict, List, Optional, Tuple
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 LOGS_DIR = PROJECT_ROOT / "logs"
 
-# ìž‘ì—… ìš°ì„ ìˆœìœ„ (ë†’ì„ìˆ˜ë¡ ìƒìœ„)
+# 작업 우선순위 (높을수록 상위)
 MODE_PRIORITY = {'tuning': 3, 'fitting': 2, 'predicting': 1}
 
 
 def get_available_log_dates() -> List[str]:
-    """ë¡œê·¸ íŒŒì¼ì´ ì¡´ìž¬í•˜ëŠ” ë‚ ì§œ ëª©ë¡ ë°˜í™˜ (ìµœì‹ ìˆœ ì •ë ¬)"""
+    """로그 파일이 존재하는 날짜 목록 반환 (최신순 정렬)"""
     if not LOGS_DIR.exists():
         return []
 
@@ -40,7 +40,7 @@ def get_available_log_dates() -> List[str]:
 
 
 def get_log_file_by_date(date_str: str) -> Optional[Path]:
-    """íŠ¹ì • ë‚ ì§œì˜ scheduler ë¡œê·¸ íŒŒì¼ ë°˜í™˜"""
+    """특정 날짜의 scheduler 로그 파일 반환"""
     if not LOGS_DIR.exists():
         return None
 
@@ -53,23 +53,23 @@ def get_log_file_by_date(date_str: str) -> Optional[Path]:
 
 
 def _extract_timestamp(line: str) -> Optional[str]:
-    """ë¡œê·¸ ë¼ì¸ì—ì„œ íƒ€ìž„ìŠ¤íƒ¬í”„ ì¶”ì¶œ"""
+    """로그 라인에서 타임스탬프 추출"""
     match = re.match(r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
     return match.group(1) if match else None
 
 
 def _parse_pipeline_runs(log_path: Path) -> List[Dict]:
     """
-    ë¡œê·¸ íŒŒì¼ì—ì„œ ëª¨ë“  íŒŒì´í”„ë¼ì¸ ì‹¤í–‰ ë¸”ë¡ì„ íŒŒì‹±
+    로그 파일에서 모든 파이프라인 실행 블록을 파싱
 
-    ê° ë¸”ë¡: "íŒŒì´í”„ë¼ì¸ ì‹œìž‘" ~ "íŒŒì´í”„ë¼ì¸ ì™„ë£Œ"
+    각 블록: "파이프라인 시작" ~ "파이프라인 완료"
 
     Returns:
         List of runs, each containing:
         - start_time, end_time
-        - global_mode (ì í¬ë³„ìžë™, tuning, fitting, predicting)
+        - global_mode (점포별자동, tuning, fitting, predicting)
         - target_store (all or specific store)
-        - lines: í•´ë‹¹ ë¸”ë¡ì˜ ë¼ì¸ë“¤ (start_idx, end_idx)
+        - lines: 해당 블록의 라인들 (start_idx, end_idx)
     """
     if not log_path or not log_path.exists():
         return []
@@ -83,15 +83,15 @@ def _parse_pipeline_runs(log_path: Path) -> List[Dict]:
         current_run = None
 
         for i, line in enumerate(lines):
-            # íŒŒì´í”„ë¼ì¸ ì‹œìž‘ ê°ì§€
-            if '[scheduler]' in line and 'íŒŒì´í”„ë¼ì¸ ì‹œìž‘' in line:
+            # 파이프라인 시작 감지
+            if '[scheduler]' in line and '파이프라인 시작' in line:
                 timestamp = _extract_timestamp(line)
 
-                # mode íŒŒì‹±
+                # mode 파싱
                 mode_match = re.search(r'mode=([^\s,]+)', line)
                 global_mode = mode_match.group(1).strip() if mode_match else 'unknown'
 
-                # target store íŒŒì‹±
+                # target store 파싱
                 store_match = re.search(r'store=([^\s,]+)', line)
                 target_store = store_match.group(1).strip() if store_match else 'all'
 
@@ -105,8 +105,8 @@ def _parse_pipeline_runs(log_path: Path) -> List[Dict]:
                     'completed': False,
                 }
 
-            # íŒŒì´í”„ë¼ì¸ ì™„ë£Œ ê°ì§€
-            if current_run and '[scheduler]' in line and 'íŒŒì´í”„ë¼ì¸ ì™„ë£Œ' in line:
+            # 파이프라인 완료 감지
+            if current_run and '[scheduler]' in line and '파이프라인 완료' in line:
                 timestamp = _extract_timestamp(line)
                 current_run['end_time'] = timestamp
                 current_run['end_idx'] = i
@@ -114,7 +114,7 @@ def _parse_pipeline_runs(log_path: Path) -> List[Dict]:
                 runs.append(current_run)
                 current_run = None
 
-        # ì™„ë£Œë˜ì§€ ì•Šì€ ì‹¤í–‰ (ì§„í–‰ ì¤‘)
+        # 완료되지 않은 실행 (진행 중)
         if current_run:
             current_run['end_idx'] = len(lines) - 1
             runs.append(current_run)
@@ -127,9 +127,9 @@ def _parse_pipeline_runs(log_path: Path) -> List[Dict]:
 
 def _parse_store_processing(lines: List[str], start_idx: int, end_idx: int, store: str) -> Optional[Dict]:
     """
-    íŠ¹ì • íŒŒì´í”„ë¼ì¸ ë¸”ë¡ì—ì„œ ì í¬ë³„ ì²˜ë¦¬ ì •ë³´ ì¶”ì¶œ
+    특정 파이프라인 블록에서 점포별 처리 정보 추출
 
-    "ì²˜ë¦¬ ì¤‘: ì í¬ XXX (mode=YYY)" ~ "[ì í¬ XXX] ì²˜ë¦¬ ì™„ë£Œ âœ“"
+    "처리 중: 점포 XXX (mode=YYY)" ~ "[점포 XXX] 처리 완료 ✓"
 
     Returns:
         {
@@ -157,8 +157,8 @@ def _parse_store_processing(lines: List[str], start_idx: int, end_idx: int, stor
         line = lines[i]
         timestamp = _extract_timestamp(line)
 
-        # ì í¬ ì²˜ë¦¬ ì‹œìž‘
-        if f'ì²˜ë¦¬ ì¤‘: ì í¬ {store}' in line:
+        # 점포 처리 시작
+        if f'처리 중: 점포 {store}' in line:
             in_store_section = True
             result['store_start'] = timestamp
 
@@ -166,51 +166,51 @@ def _parse_store_processing(lines: List[str], start_idx: int, end_idx: int, stor
             if mode_match:
                 result['mode'] = mode_match.group(1)
 
-        # ë‹¤ë¥¸ ì í¬ ì‹œìž‘ = í˜„ìž¬ ì í¬ ì„¹ì…˜ ë
-        if in_store_section and 'ì²˜ë¦¬ ì¤‘: ì í¬' in line and f'ì²˜ë¦¬ ì¤‘: ì í¬ {store}' not in line:
+        # 다른 점포 시작 = 현재 점포 섹션 끝
+        if in_store_section and '처리 중: 점포' in line and f'처리 중: 점포 {store}' not in line:
             in_store_section = False
 
-        # ì í¬ ì²˜ë¦¬ ì™„ë£Œ
-        if f'[ì í¬ {store}] ì²˜ë¦¬ ì™„ë£Œ' in line:
+        # 점포 처리 완료
+        if f'[점포 {store}] 처리 완료' in line:
             result['store_end'] = timestamp
             in_store_section = False
 
-        # ì í¬ ì„¹ì…˜ ë‚´ì—ì„œ íŠœë‹/í•™ìŠµ/ì˜ˆì¸¡ íŒŒì‹±
+        # 점포 섹션 내에서 튜닝/학습/예측 파싱
         if in_store_section or (result['store_start'] and not result['store_end']):
-            # íŠœë‹ ì‹œìž‘ (scheduler ë ˆë²¨)
-            if '[scheduler]' in line and '[íŠœë‹]' in line and f'store={store}' in line:
+            # 튜닝 시작 (scheduler 레벨)
+            if '[scheduler]' in line and '[튜닝]' in line and f'store={store}' in line:
                 result['tuning']['start_time'] = timestamp
-            # íŠœë‹ ì™„ë£Œ
-            if '[scheduler]' in line and '[íŠœë‹] ì™„ë£Œ' in line:
+            # 튜닝 완료
+            if '[scheduler]' in line and '[튜닝] 완료' in line:
                 result['tuning']['end_time'] = timestamp
                 result['tuning']['status'] = 'success'
-            if '[íŠœë‹] ì—ëŸ¬' in line:
+            if '[튜닝] 에러' in line:
                 result['tuning']['end_time'] = timestamp
                 result['tuning']['status'] = 'error'
 
-            # í•™ìŠµ ì‹œìž‘
-            if '[scheduler]' in line and '[í•™ìŠµ]' in line and f'store={store}' in line:
+            # 학습 시작
+            if '[scheduler]' in line and '[학습]' in line and f'store={store}' in line:
                 result['fitting']['start_time'] = timestamp
-            # í•™ìŠµ ì™„ë£Œ
-            if '[scheduler]' in line and '[í•™ìŠµ] ì™„ë£Œ' in line:
+            # 학습 완료
+            if '[scheduler]' in line and '[학습] 완료' in line:
                 result['fitting']['end_time'] = timestamp
                 result['fitting']['status'] = 'success'
-            if '[í•™ìŠµ] ì—ëŸ¬' in line:
+            if '[학습] 에러' in line:
                 result['fitting']['end_time'] = timestamp
                 result['fitting']['status'] = 'error'
 
-            # ì˜ˆì¸¡ ì‹œìž‘
-            if '[scheduler]' in line and '[ì˜ˆì¸¡]' in line and f'store={store}' in line:
+            # 예측 시작
+            if '[scheduler]' in line and '[예측]' in line and f'store={store}' in line:
                 result['predict']['start_time'] = timestamp
-            # ì˜ˆì¸¡ ì™„ë£Œ
-            if '[scheduler]' in line and '[ì˜ˆì¸¡] ì™„ë£Œ' in line:
+            # 예측 완료
+            if '[scheduler]' in line and '[예측] 완료' in line:
                 result['predict']['end_time'] = timestamp
                 result['predict']['status'] = 'success'
-            if '[ì˜ˆì¸¡] ì—ëŸ¬' in line:
+            if '[예측] 에러' in line:
                 result['predict']['end_time'] = timestamp
                 result['predict']['status'] = 'error'
 
-    # ì í¬ê°€ ì²˜ë¦¬ë˜ì§€ ì•Šì•˜ìœ¼ë©´ None ë°˜í™˜
+    # 점포가 처리되지 않았으면 None 반환
     if not result['store_start']:
         return None
 
@@ -219,7 +219,7 @@ def _parse_store_processing(lines: List[str], start_idx: int, end_idx: int, stor
 
 def _parse_shared_stages(lines: List[str], start_idx: int, end_idx: int) -> Dict:
     """
-    ê³µìœ  ë‹¨ê³„ (ì¶”ì¶œ, ì „ì²˜ë¦¬) íŒŒì‹±
+    공유 단계 (추출, 전처리) 파싱
     """
     result = {
         'extract': {'start_time': None, 'end_time': None, 'status': 'pending'},
@@ -230,23 +230,23 @@ def _parse_shared_stages(lines: List[str], start_idx: int, end_idx: int) -> Dict
         line = lines[i]
         timestamp = _extract_timestamp(line)
 
-        # ì¶”ì¶œ
-        if '[ì¶”ì¶œ] ë°ì´í„° ì¶”ì¶œ ì‹œìž‘' in line:
+        # 추출
+        if '[추출] 데이터 추출 시작' in line:
             result['extract']['start_time'] = timestamp
-        if '[scheduler]' in line and '[ì¶”ì¶œ] ì™„ë£Œ' in line:
+        if '[scheduler]' in line and '[추출] 완료' in line:
             result['extract']['end_time'] = timestamp
             result['extract']['status'] = 'success'
-        if '[ì¶”ì¶œ] ì‹¤íŒ¨' in line or ('[ì¶”ì¶œ]' in line and '[ERROR]' in line):
+        if '[추출] 실패' in line or ('[추출]' in line and '[ERROR]' in line):
             result['extract']['end_time'] = timestamp
             result['extract']['status'] = 'error'
 
-        # ì „ì²˜ë¦¬
-        if '[ì „ì²˜ë¦¬] ë°ì´í„° ì „ì²˜ë¦¬ ì‹œìž‘' in line:
+        # 전처리
+        if '[전처리] 데이터 전처리 시작' in line:
             result['preprocess']['start_time'] = timestamp
-        if '[scheduler]' in line and '[ì „ì²˜ë¦¬] ì™„ë£Œ' in line:
+        if '[scheduler]' in line and '[전처리] 완료' in line:
             result['preprocess']['end_time'] = timestamp
             result['preprocess']['status'] = 'success'
-        if '[ì „ì²˜ë¦¬] ì‹¤íŒ¨' in line:
+        if '[전처리] 실패' in line:
             result['preprocess']['end_time'] = timestamp
             result['preprocess']['status'] = 'error'
 
@@ -254,7 +254,7 @@ def _parse_shared_stages(lines: List[str], start_idx: int, end_idx: int) -> Dict
 
 
 def _collect_warnings_errors(lines: List[str], start_idx: int, end_idx: int, store: str = None) -> Tuple[List[str], List[str]]:
-    """ê²½ê³ /ì—ëŸ¬ ìˆ˜ì§‘"""
+    """경고/에러 수집"""
     warnings = []
     errors = []
 
@@ -264,13 +264,13 @@ def _collect_warnings_errors(lines: List[str], start_idx: int, end_idx: int, sto
         line = lines[i]
 
         if store:
-            if f'ì²˜ë¦¬ ì¤‘: ì í¬ {store}' in line:
+            if f'처리 중: 점포 {store}' in line:
                 in_store_section = True
-            elif 'ì²˜ë¦¬ ì¤‘: ì í¬' in line and f'ì²˜ë¦¬ ì¤‘: ì í¬ {store}' not in line:
+            elif '처리 중: 점포' in line and f'처리 중: 점포 {store}' not in line:
                 in_store_section = False
 
-        # ê³µìœ  ë‹¨ê³„ ë˜ëŠ” ì í¬ ì„¹ì…˜ ë‚´ì—ì„œë§Œ ìˆ˜ì§‘
-        is_shared = store and not in_store_section and i < start_idx + 200  # ì•žë¶€ë¶„ì€ ê³µìœ  ë‹¨ê³„
+        # 공유 단계 또는 점포 섹션 내에서만 수집
+        is_shared = store and not in_store_section and i < start_idx + 200  # 앞부분은 공유 단계
 
         if in_store_section or is_shared or not store:
             if '[WARNING]' in line:
@@ -292,12 +292,12 @@ def _collect_warnings_errors(lines: List[str], start_idx: int, end_idx: int, sto
 
 def parse_log_file(log_path: Path, store: str = None) -> Dict:
     """
-    ë¡œê·¸ íŒŒì¼ íŒŒì‹± (ì í¬ë³„, ë‹¤ì¤‘ ì‹¤í–‰ ì§€ì›)
+    로그 파일 파싱 (점포별, 다중 실행 지원)
 
-    ê°™ì€ ë‚  ì—¬ëŸ¬ ë²ˆ ì‹¤í–‰ëœ ê²½ìš°:
-    - ì¶”ì¶œ/ì „ì²˜ë¦¬: ë‹¹ì¼ ëª¨ë“  ì‹¤í–‰ ì¤‘ ê°€ìž¥ ìµœê·¼ ì„±ê³µí•œ ê²ƒ (ì í¬ ë¬´ê´€, ê³µìœ  ë‹¨ê³„)
-    - íŠœë‹/í•™ìŠµ/ì˜ˆì¸¡: í•´ë‹¹ ì í¬ê°€ ì²˜ë¦¬ëœ ì‹¤í–‰ ì¤‘ ìš°ì„ ìˆœìœ„ê°€ ê°€ìž¥ ë†’ì€ ê²ƒ
-    - ë‚˜ë¨¸ì§€ëŠ” additional_runsë¡œ ë°˜í™˜
+    같은 날 여러 번 실행된 경우:
+    - 추출/전처리: 당일 모든 실행 중 가장 최근 성공한 것 (점포 무관, 공유 단계)
+    - 튜닝/학습/예측: 해당 점포가 처리된 실행 중 우선순위가 가장 높은 것
+    - 나머지는 additional_runs로 반환
     """
     result = {
         'date': None,
@@ -324,13 +324,13 @@ def parse_log_file(log_path: Path, store: str = None) -> Dict:
         content = log_path.read_text(encoding='utf-8')
         lines = content.split('\n')
 
-        # 1. ëª¨ë“  íŒŒì´í”„ë¼ì¸ ì‹¤í–‰ ë¸”ë¡ íŒŒì‹±
+        # 1. 모든 파이프라인 실행 블록 파싱
         runs = _parse_pipeline_runs(log_path)
 
         if not runs:
             return result
 
-        # 2. ëª¨ë“  ì‹¤í–‰ì—ì„œ ê³µìœ  ë‹¨ê³„(ì¶”ì¶œ/ì „ì²˜ë¦¬) íŒŒì‹± â†’ ê°€ìž¥ ìµœê·¼ ì„±ê³µí•œ ê²ƒ ì„ íƒ
+        # 2. 모든 실행에서 공유 단계(추출/전처리) 파싱 -> 가장 최근 성공한 것 선택
         all_shared = []
         for run in runs:
             shared = _parse_shared_stages(lines, run['start_idx'], run['end_idx'])
@@ -339,34 +339,34 @@ def parse_log_file(log_path: Path, store: str = None) -> Dict:
                 'shared': shared,
             })
 
-        # ì¶”ì¶œ: ê°€ìž¥ ìµœê·¼ ì„±ê³µí•œ ê²ƒ (ì‹œê°„ìˆœ ì—­ì •ë ¬ í›„ ì²« ë²ˆì§¸ success)
+        # 추출: 가장 최근 성공한 것 (시간순 역정렬 후 첫 번째 success)
         latest_extract = {'start_time': None, 'end_time': None, 'status': 'pending'}
         for item in sorted(all_shared, key=lambda x: x['run']['start_time'] or '', reverse=True):
             if item['shared']['extract']['status'] == 'success':
                 latest_extract = item['shared']['extract']
                 break
 
-        # ì „ì²˜ë¦¬: ê°€ìž¥ ìµœê·¼ ì„±ê³µí•œ ê²ƒ
+        # 전처리: 가장 최근 성공한 것
         latest_preprocess = {'start_time': None, 'end_time': None, 'status': 'pending'}
         for item in sorted(all_shared, key=lambda x: x['run']['start_time'] or '', reverse=True):
             if item['shared']['preprocess']['status'] == 'success':
                 latest_preprocess = item['shared']['preprocess']
                 break
 
-        # 3. í•´ë‹¹ ì í¬ê°€ ì²˜ë¦¬ëœ ì‹¤í–‰ ë¸”ë¡ë§Œ í•„í„°ë§ + ìƒì„¸ íŒŒì‹±
+        # 3. 해당 점포가 처리된 실행 블록만 필터링 + 상세 파싱
         store_runs = []
         for run in runs:
-            # ì í¬ê°€ ì²˜ë¦¬ë˜ì—ˆëŠ”ì§€ í™•ì¸
+            # 점포가 처리되었는지 확인
             store_info = _parse_store_processing(lines, run['start_idx'], run['end_idx'], store) if store else None
 
             if store and not store_info:
-                # ì´ ì‹¤í–‰ì—ì„œ í•´ë‹¹ ì í¬ê°€ ì²˜ë¦¬ë˜ì§€ ì•ŠìŒ
+                # 이 실행에서 해당 점포가 처리되지 않음
                 continue
 
-            # í•´ë‹¹ ì‹¤í–‰ì˜ ê³µìœ  ë‹¨ê³„ íŒŒì‹±
+            # 해당 실행의 공유 단계 파싱
             shared = _parse_shared_stages(lines, run['start_idx'], run['end_idx'])
 
-            # ê²½ê³ /ì—ëŸ¬ ìˆ˜ì§‘
+            # 경고/에러 수집
             warnings, errors = _collect_warnings_errors(lines, run['start_idx'], run['end_idx'], store)
 
             store_runs.append({
@@ -378,7 +378,7 @@ def parse_log_file(log_path: Path, store: str = None) -> Dict:
             })
 
         if not store_runs:
-            # ì í¬ ì²˜ë¦¬ ê¸°ë¡ì€ ì—†ì§€ë§Œ ì¶”ì¶œ/ì „ì²˜ë¦¬ëŠ” ìžˆì„ ìˆ˜ ìžˆìŒ
+            # 점포 처리 기록은 없지만 추출/전처리는 있을 수 있음
             if latest_extract['status'] == 'success' or latest_preprocess['status'] == 'success':
                 result['extract'] = latest_extract
                 result['preprocess'] = latest_preprocess
@@ -386,10 +386,10 @@ def parse_log_file(log_path: Path, store: str = None) -> Dict:
                     result['date'] = runs[0]['start_time'].split(' ')[0] if runs[0]['start_time'] else None
             return result
 
-        # 4. ìš°ì„ ìˆœìœ„ë¡œ ë©”ì¸ ì‹¤í–‰ ì„ íƒ
+        # 4. 우선순위로 메인 실행 선택
         def get_priority(sr):
             mode = sr['store_info']['mode'] if sr['store_info'] else sr['run']['global_mode']
-            if mode == 'ì í¬ë³„ìžë™':
+            if mode == '점포별자동':
                 mode = 'predicting'
             return MODE_PRIORITY.get(mode, 0)
 
@@ -398,7 +398,7 @@ def parse_log_file(log_path: Path, store: str = None) -> Dict:
         main_run = store_runs[0]
         additional = store_runs[1:] if len(store_runs) > 1 else []
 
-        # 5. ê²°ê³¼ êµ¬ì„±
+        # 5. 결과 구성
         run = main_run['run']
         store_info = main_run['store_info']
         main_shared = main_run['shared']
@@ -410,7 +410,7 @@ def parse_log_file(log_path: Path, store: str = None) -> Dict:
         result['last_run_start'] = run['start_time']
         result['last_run_end'] = run['end_time']
 
-        # ê³µìœ  ë‹¨ê³„: ë©”ì¸ ì‹¤í–‰ì—ì„œ ìžˆìœ¼ë©´ ì‚¬ìš©, ì—†ìœ¼ë©´ fallback
+        # 공유 단계: 메인 실행에서 있으면 사용, 없으면 fallback
         if main_shared['extract']['status'] == 'success':
             result['extract'] = main_shared['extract']
         else:
@@ -421,23 +421,23 @@ def parse_log_file(log_path: Path, store: str = None) -> Dict:
         else:
             result['preprocess'] = latest_preprocess  # fallback
 
-        # ì í¬ë³„ ë‹¨ê³„: ë©”ì¸ ì‹¤í–‰ì—ì„œ ê°€ì ¸ì˜´
+        # 점포별 단계: 메인 실행에서 가져옴
         if store_info:
             result['tuning'] = store_info['tuning']
             result['fitting'] = store_info['fitting']
             result['predict'] = store_info['predict']
 
-        # ê²½ê³ /ì—ëŸ¬
+        # 경고/에러
         result['warnings'] = main_run['warnings']
         result['errors'] = main_run['errors']
 
-        # ì¶”ê°€ ì‹¤í–‰ ì •ë³´
+        # 추가 실행 정보
         for add_run in additional:
             add_store_info = add_run['store_info']
             add_time = add_store_info['store_start'] if add_store_info else add_run['run']['start_time']
             add_mode = add_store_info['mode'] if add_store_info else add_run['run']['global_mode']
 
-            if add_mode == 'ì í¬ë³„ìžë™':
+            if add_mode == '점포별자동':
                 add_mode = 'predicting'
 
             if add_time:
@@ -447,7 +447,7 @@ def parse_log_file(log_path: Path, store: str = None) -> Dict:
                     'mode': add_mode.title() if add_mode else '-',
                 })
 
-        # ì‹œê°„ìˆœ ì •ë ¬ (ì˜¤ëž˜ëœ ê²ƒ ë¨¼ì €)
+        # 시간순 정렬 (오래된 것 먼저)
         result['additional_runs'].sort(key=lambda x: x['time'])
 
     except Exception:
@@ -457,7 +457,7 @@ def parse_log_file(log_path: Path, store: str = None) -> Dict:
 
 
 def _load_scheduled_tasks() -> Dict:
-    """scheduled_tasks.json ë¡œë“œ (deleted ì œì™¸)"""
+    """scheduled_tasks.json 로드 (deleted 제외)"""
     import json
     scheduled_file = PROJECT_ROOT / "scheduled_tasks.json"
 
@@ -482,12 +482,12 @@ def _load_scheduled_tasks() -> Dict:
 
 
 def _compute_mode_detail(result: Dict, store: str = None) -> str:
-    """ì‹¤í–‰ ëª¨ë“œ ìƒì„¸ ì •ë³´ ê³„ì‚°"""
+    """실행 모드 상세 정보 계산"""
     mode = result.get('mode', '')
     date = result.get('date')
     store_mode = result.get('store_mode')
 
-    # ì‹¤ì œ ì‹¤í–‰ëœ ëª¨ë“œ
+    # 실제 실행된 모드
     if store_mode:
         actual_mode = store_mode
     else:
@@ -504,7 +504,7 @@ def _compute_mode_detail(result: Dict, store: str = None) -> str:
         else:
             actual_mode = None
 
-    # ì˜ˆì•½ëœ ìž‘ì—… í™•ì¸
+    # 예약된 작업 확인
     scheduled_tasks = _load_scheduled_tasks()
     has_scheduled = False
     scheduled_mode = None
@@ -516,19 +516,19 @@ def _compute_mode_detail(result: Dict, store: str = None) -> str:
                 scheduled_mode = task.get('mode', actual_mode)
                 break
 
-    # mode_detail ê²°ì •
-    if mode == 'ì í¬ë³„ìžë™':
+    # mode_detail 결정
+    if mode == '점포별자동':
         if has_scheduled:
-            return f"ì˜ˆì•½ ({scheduled_mode})"
+            return f"예약 ({scheduled_mode})"
         elif actual_mode:
-            return f"ìžë™ ({actual_mode})"
+            return f"자동 ({actual_mode})"
         else:
-            return "ìžë™ (-)"
-    elif '(ìžë™)' in mode:
-        base_mode = mode.replace('(ìžë™)', '').strip()
+            return "자동 (-)"
+    elif '(자동)' in mode:
+        base_mode = mode.replace('(자동)', '').strip()
         if has_scheduled:
-            return f"ì˜ˆì•½ ({base_mode})"
-        return f"ìžë™ ({base_mode})"
+            return f"예약 ({base_mode})"
+        return f"자동 ({base_mode})"
     elif mode in ['tuning', 'fitting', 'predicting']:
         return mode
     else:
@@ -536,7 +536,7 @@ def _compute_mode_detail(result: Dict, store: str = None) -> str:
 
 
 def calculate_duration(start_time: str, end_time: str) -> str:
-    """ì†Œìš” ì‹œê°„ ê³„ì‚°"""
+    """소요 시간 계산"""
     if not start_time or not end_time:
         return ""
 
@@ -549,33 +549,33 @@ def calculate_duration(start_time: str, end_time: str) -> str:
         if total_seconds < 0:
             return ""
         elif total_seconds < 60:
-            return f"{total_seconds}ì´ˆ"
+            return f"{total_seconds}초"
         elif total_seconds < 3600:
             minutes = total_seconds // 60
             seconds = total_seconds % 60
-            return f"{minutes}ë¶„ {seconds}ì´ˆ"
+            return f"{minutes}분 {seconds}초"
         else:
             hours = total_seconds // 3600
             minutes = (total_seconds % 3600) // 60
-            return f"{hours}ì‹œê°„ {minutes}ë¶„"
+            return f"{hours}시간 {minutes}분"
     except Exception:
         return ""
 
 
 def get_status_style(status: str) -> tuple:
-    """ìƒíƒœë³„ ìŠ¤íƒ€ì¼ (emoji, bg_color, text_color)"""
+    """상태별 스타일 (emoji, bg_color, text_color)"""
     if status == 'success':
-        return ('âœ…', '#d4edda', '#155724')
+        return ('✅', '#d4edda', '#155724')
     elif status == 'error':
-        return ('âŒ', '#f8d7da', '#721c24')
+        return ('❌', '#f8d7da', '#721c24')
     elif status == 'pending':
-        return ('â¬œ', '#e9ecef', '#6c757d')
+        return ('⬜', '#e9ecef', '#6c757d')
     else:
-        return ('âšª', '#fff', '#333')
+        return ('⚪', '#fff', '#333')
 
 
 def get_pipeline_summary(store: str) -> Optional[Dict]:
-    """ê°€ìž¥ ìµœê·¼ íŒŒì´í”„ë¼ì¸ ìƒíƒœ ìš”ì•½ ë°˜í™˜"""
+    """가장 최근 파이프라인 상태 요약 반환"""
     available_dates = get_available_log_dates()
 
     if not available_dates:
@@ -590,20 +590,20 @@ def get_pipeline_summary(store: str) -> Optional[Dict]:
 
     status['mode_detail'] = _compute_mode_detail(status, store)
 
-    # ìš”ì•½ ìƒíƒœ
+    # 요약 상태
     if status['completed']:
         if len(status['errors']) > 0:
-            status_text = f"ì™„ë£Œ (ì—ëŸ¬ {len(status['errors'])}ê±´)"
-            status_icon = "âš ï¸"
+            status_text = f"완료 (에러 {len(status['errors'])}건)"
+            status_icon = "⚠️"
         elif len(status['warnings']) > 0:
-            status_text = f"ì™„ë£Œ (ê²½ê³  {len(status['warnings'])}ê±´)"
-            status_icon = "âœ…"
+            status_text = f"완료 (경고 {len(status['warnings'])}건)"
+            status_icon = "✅"
         else:
-            status_text = "ì •ìƒ ì™„ë£Œ"
-            status_icon = "âœ…"
+            status_text = "정상 완료"
+            status_icon = "✅"
     else:
-        status_text = "ì§„í–‰ ì¤‘"
-        status_icon = "ðŸ”„"
+        status_text = "진행 중"
+        status_icon = "🔄"
 
     total_duration = calculate_duration(status['last_run_start'], status['last_run_end'])
     date_display = latest_date.replace('-', '/')
@@ -618,7 +618,7 @@ def get_pipeline_summary(store: str) -> Optional[Dict]:
 
 
 def _calculate_total_duration_from_stages(status: Dict) -> str:
-    """ë‹¨ê³„ë³„ ì†Œìš” ì‹œê°„ì˜ í•©ê³„ ê³„ì‚°"""
+    """단계별 소요 시간의 합계 계산"""
     stages = ['extract', 'preprocess', 'tuning', 'fitting', 'predict']
     total_seconds = 0
 
@@ -641,25 +641,25 @@ def _calculate_total_duration_from_stages(status: Dict) -> str:
     if total_seconds == 0:
         return ""
     elif total_seconds < 60:
-        return f"{total_seconds}ì´ˆ"
+        return f"{total_seconds}초"
     elif total_seconds < 3600:
         minutes = total_seconds // 60
         seconds = total_seconds % 60
-        return f"{minutes}ë¶„ {seconds}ì´ˆ"
+        return f"{minutes}분 {seconds}초"
     else:
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60
-        return f"{hours}ì‹œê°„ {minutes}ë¶„"
+        return f"{hours}시간 {minutes}분"
 
 
 def render_pipeline_status(store: str, selected_date: str = None):
-    """íŒŒì´í”„ë¼ì¸ ìƒíƒœ ë Œë”ë§"""
-    st.markdown("### ðŸ“Š íŒŒì´í”„ë¼ì¸ ìƒíƒœ")
+    """파이프라인 상태 렌더링"""
+    st.markdown("### 📊 파이프라인 상태")
 
     available_dates = get_available_log_dates()
 
     if not available_dates:
-        st.warning("íŒŒì´í”„ë¼ì¸ ì‹¤í–‰ ê¸°ë¡ì´ ì—†ìŠµë‹ˆë‹¤.")
+        st.warning("파이프라인 실행 기록이 없습니다.")
         return
 
     available_date_objs = [datetime.strptime(d, '%Y-%m-%d').date() for d in available_dates]
@@ -674,7 +674,7 @@ def render_pipeline_status(store: str, selected_date: str = None):
     col_date, col_spacer = st.columns([1, 3])
     with col_date:
         selected_date_obj = st.date_input(
-            "ðŸ“… íŒŒì´í”„ë¼ì¸ ë‚ ì§œ",
+            "📅 파이프라인 날짜",
             value=default_date,
             min_value=min_date,
             max_value=max_date,
@@ -689,10 +689,10 @@ def render_pipeline_status(store: str, selected_date: str = None):
     status['mode_detail'] = _compute_mode_detail(status, store)
 
     if not log_path or not log_path.exists():
-        st.info(f"ðŸ“… {selected_date}: íŒŒì´í”„ë¼ì¸ ì‹¤í–‰ ê¸°ë¡ì´ ì—†ìŠµë‹ˆë‹¤.")
+        st.info(f"📅 {selected_date}: 파이프라인 실행 기록이 없습니다.")
         return
 
-    # ì´ ì†Œìš” ì‹œê°„
+    # 총 소요 시간
     total_duration = _calculate_total_duration_from_stages(status)
 
     error_count = len(status['errors'])
@@ -702,28 +702,28 @@ def render_pipeline_status(store: str, selected_date: str = None):
     if total_duration:
         summary_parts.append(total_duration)
     if error_count > 0:
-        summary_parts.append(f"ì—ëŸ¬ {error_count}ê±´")
+        summary_parts.append(f"에러 {error_count}건")
     if warning_count > 0:
-        summary_parts.append(f"ê²½ê³  {warning_count}ê±´")
+        summary_parts.append(f"경고 {warning_count}건")
 
     if summary_parts:
         st.markdown(f"**{' / '.join(summary_parts)}**")
 
-    # í—¤ë”
+    # 헤더
     col1, col2 = st.columns([1, 1])
     with col1:
-        st.markdown(f"**ì í¬**: {store}")
+        st.markdown(f"**점포**: {store}")
     with col2:
         if status['mode_detail']:
-            st.markdown(f"**ì‹¤í–‰ ëª¨ë“œ**: `{status['mode_detail']}`")
+            st.markdown(f"**실행 모드**: `{status['mode_detail']}`")
 
-    # ë‹¨ê³„ë³„ ìƒíƒœ ì¹´ë“œ
+    # 단계별 상태 카드
     stages = [
-        ('ì¶”ì¶œ', 'extract', 'ðŸ“¥'),
-        ('ì „ì²˜ë¦¬', 'preprocess', 'âš™ï¸'),
-        ('íŠœë‹', 'tuning', 'ðŸŽ¯'),
-        ('í•™ìŠµ', 'fitting', 'ðŸ“š'),
-        ('ì˜ˆì¸¡', 'predict', 'ðŸ“Š'),
+        ('추출', 'extract', '📥'),
+        ('전처리', 'preprocess', '⚙️'),
+        ('튜닝', 'tuning', '🎯'),
+        ('학습', 'fitting', '📚'),
+        ('예측', 'predict', '📊'),
     ]
 
     cols = st.columns(len(stages))
@@ -749,8 +749,8 @@ def render_pipeline_status(store: str, selected_date: str = None):
                 </div>
             """, unsafe_allow_html=True)
 
-    # ì‹œê°„ ìƒì„¸
-    st.markdown("**ì‹¤í–‰ ì‹œê°„ ìƒì„¸**")
+    # 시간 상세
+    st.markdown("**실행 시간 상세**")
 
     time_data = []
     for name, key, icon in stages:
@@ -760,30 +760,30 @@ def render_pipeline_status(store: str, selected_date: str = None):
             end = stage['end_time'].split(' ')[1] if stage['end_time'] else '-'
             duration = calculate_duration(stage['start_time'], stage['end_time'])
             time_data.append({
-                'ë‹¨ê³„': f"{icon} {name}",
-                'ì‹œìž‘': start,
-                'ì¢…ë£Œ': end,
-                'ì†Œìš” ì‹œê°„': duration or '-'
+                '단계': f"{icon} {name}",
+                '시작': start,
+                '종료': end,
+                '소요 시간': duration or '-'
             })
 
     if time_data:
         import pandas as pd
         st.dataframe(pd.DataFrame(time_data), hide_index=True)
     else:
-        st.info("ì‹¤í–‰ ê¸°ë¡ì´ ì—†ìŠµë‹ˆë‹¤.")
+        st.info("실행 기록이 없습니다.")
 
-    # ì¶”ê°€ ì‹¤í–‰ í‘œì‹œ
+    # 추가 실행 표시
     additional_runs = status.get('additional_runs', [])
     if additional_runs:
         st.markdown("---")
-        st.markdown("**ðŸ“Œ ê°™ì€ ë‚  ì¶”ê°€ ì‹¤í–‰**")
+        st.markdown("**📌 같은 날 추가 실행**")
         for run in additional_runs:
-            st.caption(f"â€¢ {run['time']} - {run['mode']} ìž‘ì—… ì‹¤í–‰ë¨")
+            st.caption(f"• {run['time']} - {run['mode']} 작업 실행됨")
 
-    # ê²½ê³ /ì—ëŸ¬
+    # 경고/에러
     if status['errors']:
         unique_errors = list(dict.fromkeys(status['errors']))
-        with st.expander(f"âŒ **ì—ëŸ¬ ({len(unique_errors)}ê±´)** - í´ë¦­í•˜ì—¬ íŽ¼ì¹˜ê¸°", expanded=False):
+        with st.expander(f"❌ **에러 ({len(unique_errors)}건)** - 클릭하여 펼치기", expanded=False):
             error_html = "".join([
                 f"<div style='background:#f8d7da; color:#721c24; padding:4px 8px; margin:2px 0; border-radius:4px; font-size:13px;'>{err}</div>"
                 for err in unique_errors
@@ -792,7 +792,7 @@ def render_pipeline_status(store: str, selected_date: str = None):
 
     if status['warnings']:
         unique_warnings = list(dict.fromkeys(status['warnings']))
-        with st.expander(f"âš ï¸ **ê²½ê³  ({len(unique_warnings)}ê±´)** - í´ë¦­í•˜ì—¬ íŽ¼ì¹˜ê¸°", expanded=False):
+        with st.expander(f"⚠️ **경고 ({len(unique_warnings)}건)** - 클릭하여 펼치기", expanded=False):
             warning_html = "".join([
                 f"<div style='background:#fff3cd; color:#856404; padding:4px 8px; margin:2px 0; border-radius:4px; font-size:13px;'>{warn}</div>"
                 for warn in unique_warnings
@@ -800,7 +800,7 @@ def render_pipeline_status(store: str, selected_date: str = None):
             st.markdown(warning_html, unsafe_allow_html=True)
 
 
-# ê¸°ì¡´ í•¨ìˆ˜ ìœ ì§€ (í•˜ìœ„ í˜¸í™˜ì„±)
+# 기존 함수 유지 (하위 호환성)
 def render_pipeline_status_toggle(store: str, selected_date: str = None):
-    """[Deprecated] render_pipeline_status() ì‚¬ìš© ê¶Œìž¥"""
+    """[Deprecated] render_pipeline_status() 사용 권장"""
     render_pipeline_status(store, selected_date)
